@@ -4,7 +4,7 @@ RUN echo "deb http://deb.debian.org/debian bookworm-backports main" >/etc/apt/so
 
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update -y
-RUN apt-get install -y redmine redmine-sqlite
+RUN apt-get install -y redmine redmine-sqlite ruby-rbnacl ruby-ffi
 
 ENV REDMINE_ROOT=/usr/share/redmine
 RUN mkdir -p "$REDMINE_ROOT/plugins/redmine_pgcommunityauth/"

@@ -1,5 +1,5 @@
 require 'base64'
-require 'openssl' # aes gem doesn't let us disable PKCS#5 padding
+require "rbnacl"
 
 module RedminePgcommunityauth
   module AccountControllerPatch
@@ -31,10 +31,11 @@ module RedminePgcommunityauth
         return
       end
 
-      iv   = Base64.urlsafe_decode64(params[:i] || "")
+      nonce   = Base64.urlsafe_decode64(params[:n] || "")
       data = Base64.urlsafe_decode64(params[:d] || "")
+      tag = Base64.urlsafe_decode64(params[:t] || "")
 
-      qs = aes_decrypt(pgcommunityauth_cipher_key, iv, data).rstrip
+      qs = do_decrypt(pgcommunityauth_cipher_key, nonce, data, tag).rstrip
       auth = Rack::Utils.parse_query(qs)
 
       # check auth hash for mandatory keys
@@ -60,7 +61,9 @@ module RedminePgcommunityauth
       end
 
       successful_authentication(user)
-    rescue OpenSSL::Cipher::CipherError
+    rescue RbNaCl::LengthError
+      flash[:error] = "Invalid PG communityauth message nonce received."
+    rescue RbNaCl::CryptoError
       flash[:error] = "Invalid PG communityauth message received."
     rescue InvalidAuthTokenError
       flash[:error] = "Invalid PG communityauth token received."
@@ -90,31 +93,18 @@ module RedminePgcommunityauth
       Base64.decode64(pgcommunityauth_settings['cipher_key'])
     end
 
-    def aes_cipher(key_size)
-      #
-      # Use OpenSSL to set the padding, otherwise we could use AES.decrypt():
-      #
-      OpenSSL::Cipher.new("AES-#{key_size*8}-CBC")
+    def get_cipher(key)
+      RbNaCl::AEAD::XChaCha20Poly1305IETF.new(key)
     end
 
-    def aes_encrypt(key, iv, data)
-      cipher = aes_cipher(key.size)
-      cipher.encrypt
-
-      cipher.padding = 0
-      cipher.key     = key
-      cipher.iv      = iv
-      cipher.update(data) + cipher.final
+    def do_encrypt(key, iv, data)
+      cipher = get_cipher(key)
+      cipher.encrypt(iv, data, '')
     end
 
-    def aes_decrypt(key, iv, data)
-      cipher = aes_cipher(key.size)
-      cipher.decrypt
-
-      cipher.padding = 0
-      cipher.key     = key
-      cipher.iv      = iv
-      cipher.update(data) + cipher.final
+    def do_decrypt(key, nonce, data, tag)
+      cipher = get_cipher(key)
+      cipher.decrypt(nonce, data + tag, '')
     end
 
     def login_data_cipher_key
@@ -123,20 +113,12 @@ module RedminePgcommunityauth
     end
 
     def encrypt_login_data(back_url)
-      block_length = 16
-      iv = OpenSSL::Random.random_bytes(block_length)
+      iv = RbNaCl::Random.random_bytes(24)
 
-      # TODO: why do we include time, if we already have a random salt in IV?
-      data = "t=#{Time.now.to_i}&r=#{CGI.escape(back_url)}"
-
-      padded_data = right_pad_to_block_length(data, block_length)
-      cipher = aes_encrypt(login_data_cipher_key, iv, padded_data)
+      data = "r=#{CGI.escape(back_url)}"
+      cipher = do_encrypt(login_data_cipher_key, iv, data)
 
       "#{Base64.urlsafe_encode64(iv)}$#{Base64.urlsafe_encode64(cipher)}"
-    end
-
-    def right_pad_to_block_length(data, blen)
-      data + ' '*(blen - data.size % blen)
     end
 
     def decrypt_login_data(data)
@@ -144,7 +126,7 @@ module RedminePgcommunityauth
       iv     = Base64.urlsafe_decode64(parts[0])
       cipher = Base64.urlsafe_decode64(parts[1])
 
-      aes_decrypt(login_data_cipher_key, iv, cipher).rstrip
+      do_decrypt(login_data_cipher_key, iv, cipher, '').rstrip
     end
   end
 end
