@@ -75,7 +75,7 @@ module RedminePgcommunityauth
     end
 
     def pgcommunityauth_base_url
-      "https://www.postgresql.org/account/auth/#{pgcommunityauth_settings['authsite_id']}"
+      "#{pgcommunityauth_settings['base_url']}account/auth/#{pgcommunityauth_settings['authsite_id']}"
     end
 
     def pgcommunityauth_login_url
