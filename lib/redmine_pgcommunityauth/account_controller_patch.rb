@@ -3,8 +3,6 @@ require 'openssl' # aes gem doesn't let us disable PKCS#5 padding
 
 module RedminePgcommunityauth
   module AccountControllerPatch
-    unloadable
-
     class AuthTokenExpiredError < RuntimeError; end
     class InvalidAuthTokenError < RuntimeError; end
 
