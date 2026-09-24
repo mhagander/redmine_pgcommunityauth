@@ -3,8 +3,6 @@ require "rbnacl"
 
 module RedminePgcommunityauth
   module AccountControllerPatch
-    unloadable
-
     class AuthTokenExpiredError < RuntimeError; end
     class InvalidAuthTokenError < RuntimeError; end
 
